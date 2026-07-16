@@ -1,0 +1,80 @@
+camera:
+  index: 0          # run scripts/list_cameras.py to pick the RGB camera
+  width: 640
+  height: 480
+  fps: 30
+
+tracking:
+  primary_hand: Right   # hand that drives the cursor
+  max_hands: 2
+  det_confidence: 0.6
+  track_confidence: 0.6
+
+cursor:
+  # Sub-region of the camera frame that maps to your full screen(s).
+  # Smaller box = less arm travel, more sensitivity.
+  box: {left: 0.20, right: 0.80, top: 0.20, bottom: 0.72}
+  # higher beta = cursor keeps up with fast moves (less lag);
+  # higher min_cutoff = less smoothing when slow (snappier, more jitter)
+  one_euro: {min_cutoff: 1.8, beta: 0.05, d_cutoff: 1.0}
+
+pinch:
+  engage: 0.32        # fingertip-to-thumb distance / hand span to trigger
+  release: 0.48       # must open past this to release (hysteresis)
+  grace_ms: 250       # index pinch held past this = drag instead of click
+  window_hold_ms: 450 # middle pinch held longer than this = grab window
+
+scroll:
+  gain: 6000          # wheel units per full-frame of hand travel
+  natural: false      # true = touch-style (hand up scrolls down)
+  deadzone: 0.0015    # ignore per-frame jitter below this
+  step: 40            # wheel chunk size (smaller = smoother)
+
+zoom:
+  gain: 4500          # wheel units per normalized hand-spread change
+  step: 20            # small chunks -> smooth, analog-feeling zoom
+
+volume:
+  step_norm: 0.035    # hand travel per volume tick
+
+swipe:
+  vx_thresh: 1.2      # frame-widths/sec for one-palm alt-tab swipe
+  vy_thresh: 0.9      # frame-heights/sec for two-palm up/down swipe
+  cooldown_s: 1.0
+
+window:
+  fling_px_s: 1800    # release speed that snaps the window to an edge
+
+fist_mute_hold_s: 1.0   # fist held this long = pause media + mute speakers
+
+voice:
+  enabled: true
+  model: turbo        # whisper large-v3-turbo: near large-v3 accuracy, much faster.
+                      # use "large-v3" for absolute max accuracy
+  cpu_model: small    # used ONLY when no GPU is available (turbo is 0.7x
+                      # realtime on CPU; small is 2.6x). Set null to always
+                      # use `model`, accepting the latency
+  device: auto        # tries CUDA (RTX), falls back to CPU int8 automatically
+  language: en        # lock the language so accents aren't misdetected as
+                      # another language; set null to autodetect (multilingual)
+  mode: dictation     # dictation | command  (switch by voice at any time)
+  start_on: false     # mic starts muted — pinky pinch / Ctrl+Alt+M / voice
+  input_device: null  # sounddevice index; null = system default mic
+  vocabulary: []      # names/jargon to bias recognition, e.g. [Necto, Jajapur]
+  vad:
+    rms_start: 0.010        # speech-start energy threshold
+    rms_end: 0.006          # below this counts as silence
+    silence_end_s: 0.60     # pause length that ends an utterance
+    pre_roll_s: 0.40        # audio kept from before speech started
+    min_utterance_s: 0.25
+    max_utterance_s: 25
+  typing:
+    smart_spacing: true     # auto-space between dictated utterances
+
+ui:
+  show_preview: true  # camera window with skeleton + state overlay
+  hud:                # click-through action toasts, bottom-left corner
+    enabled: true
+    ttl_s: 2.5        # seconds each toast stays on screen
+    max_items: 4      # most recent actions shown at once
+    opacity: 0.88

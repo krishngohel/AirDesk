@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+
+# Downloaded models (too large for git)
+models/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Test audio samples
+scripts/tts_samples/
+
+# OS
+.DS_Store
+Thumbs.db
