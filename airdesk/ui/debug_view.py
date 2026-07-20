@@ -31,4 +31,20 @@ def draw(frame, hands, engine, fps):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, mic_color, 1)
     cv2.putText(frame, f"{fps:.0f} fps", (10, h - 12),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, _WHITE, 1)
+
+    # live palm-swipe speed meter: bar past the tick = a track skip fires
+    vx = getattr(engine, "swipe_vx", 0.0)
+    if vx:
+        thresh = engine.cfg["swipe"]["vx_thresh"]
+        cx, cy, half = w // 2, h - 18, 110
+        tick = int(half * (1 / 1.5))  # threshold sits at 2/3 of the meter
+        cv2.line(frame, (cx - half, cy), (cx + half, cy), (110, 110, 110), 1)
+        for s in (-1, 1):
+            cv2.line(frame, (cx + s * tick, cy - 5), (cx + s * tick, cy + 5),
+                     (160, 160, 160), 1)
+        bar = int(max(-1.0, min(1.0, vx / (1.5 * thresh))) * half)
+        color = _GREEN if abs(vx) >= thresh else _WHITE
+        cv2.line(frame, (cx, cy), (cx + bar, cy), color, 4)
+        cv2.putText(frame, "swipe", (cx - half - 52, cy + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1)
     return frame

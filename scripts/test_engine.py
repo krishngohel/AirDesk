@@ -159,11 +159,29 @@ def make_hand(label="Right", extended=("index", "middle", "ring", "pinky"),
     return HandData(label, pts, 1.0)
 
 
+def make_side_point(direction=1, cx=0.5, cy=0.5):
+    """Only the index extended, the whole hand rotated 90 deg so the finger
+    points sideways (direction=1 -> right on the mirrored frame)."""
+    hd = make_hand(extended=("index",), cx=cx, cy=cy)
+    c = hd.pts[9].copy()
+    rel = hd.pts - c
+    if direction > 0:
+        rot = np.stack([-rel[:, 1], rel[:, 0]], axis=1)
+    else:
+        rot = np.stack([rel[:, 1], -rel[:, 0]], axis=1)
+    return HandData(hd.label, (c + rot).astype(np.float32), 1.0)
+
+
 class Runner:
-    def __init__(self):
+    def __init__(self, **cfg_overrides):
         cfg = yaml.safe_load(
             (Path(__file__).resolve().parents[1] / "config" / "gestures.yaml")
             .read_text())
+        # tests exercise every control, whatever the user's toggles say
+        # (missing = on); per-test overrides still apply below
+        cfg["gestures"] = {}
+        for key, sub in cfg_overrides.items():
+            cfg.setdefault(key, {}).update(sub)
         self.mouse = FakeMouse()
         self.kb = FakeKb()
         self.win = FakeWin()
@@ -378,12 +396,71 @@ def test_zoom_out():
           f"{len(wheels)} wheels: {wheels[:4]}")
 
 
-def test_palm_swipe_alt_tab():
+def test_palm_swipe_media():
     r = Runner()
     for i in range(8):
         r.feed(make_hand(dx=0.05 * i))  # open palm moving fast right
-    check("fast palm swipe = alt-tab", "alt_tab" in r.kb.events,
+    check("palm swipe right = next track", ("tap", "next_track") in r.kb.events,
           str(r.kb.events))
+    r2 = Runner()
+    for i in range(8):
+        r2.feed(make_hand(dx=-0.05 * i))  # open palm moving fast left
+    check("palm swipe left = previous track",
+          ("tap", "prev_track") in r2.kb.events, str(r2.kb.events))
+
+
+def test_palm_swipe_alt_tab_option():
+    r = Runner(swipe={"palm_action": "alt_tab"})
+    for i in range(8):
+        r.feed(make_hand(dx=0.05 * i))
+    check("palm_action: alt_tab restores window switching",
+          "alt_tab" in r.kb.events and ("tap", "next_track") not in r.kb.events,
+          str(r.kb.events))
+
+
+def test_point_skip():
+    r = Runner(gestures={"cursor": False})
+    r.feed(make_side_point(1), 8)
+    check("point right held = next track", ("tap", "next_track") in r.kb.events,
+          str(r.kb.events))
+    n = r.kb.events.count(("tap", "next_track"))
+    r.feed(make_side_point(1), 80)  # keep holding well past the cooldown
+    check("holding the point doesn't repeat-fire",
+          r.kb.events.count(("tap", "next_track")) == n, str(r.kb.events))
+    r2 = Runner(gestures={"cursor": False})
+    r2.feed(make_side_point(-1), 8)
+    check("point left held = previous track",
+          ("tap", "prev_track") in r2.kb.events, str(r2.kb.events))
+    r3 = Runner(gestures={"cursor": False})
+    r3.feed(make_hand(extended=("index",)), 10)  # pointing up, not sideways
+    check("vertical point does nothing", not r3.kb.events, str(r3.kb.events))
+    r4 = Runner(gestures={"cursor": False, "point_skip": False})
+    r4.feed(make_side_point(1), 10)
+    check("gestures.point_skip: false disables it", not r4.kb.events,
+          str(r4.kb.events))
+    r5 = Runner(gestures={"cursor": True, "point_skip": True})
+    r5.feed(make_side_point(1), 10)
+    check("point skip stays off while the cursor gesture is on",
+          not r5.kb.events, str(r5.kb.events))
+
+
+def test_gesture_toggles():
+    r = Runner(gestures={"click": False})
+    r.feed(make_hand(extended=("index",)), 3)
+    r.feed(make_hand(extended=("index",), pinched=("index",)), 3)
+    r.feed(make_hand(extended=("index",)), 3)
+    check("gestures.click: false disables clicking",
+          "click" not in r.mouse.events, str(r.mouse.events))
+    r2 = Runner(gestures={"palm_swipe": False})
+    for i in range(8):
+        r2.feed(make_hand(dx=0.05 * i))
+    check("gestures.palm_swipe: false disables the swipe",
+          not r2.kb.events, str(r2.kb.events))
+    r3 = Runner(gestures={"fist_mute": False})
+    r3.feed(make_hand(extended=("index",)), 3)
+    r3.feed(make_hand(extended=()), 55)
+    check("gestures.fist_mute: false disables fist silence",
+          ("tap", "mute") not in r3.kb.events, str(r3.kb.events))
 
 
 def test_volume_freezes_cursor():

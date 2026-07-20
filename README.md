@@ -11,6 +11,13 @@ replaces the keyboard. Nothing ever leaves your machine.
 .venv\Scripts\pip install -r requirements-voice.txt   # once, for voice
 ```
 
+Or press **Ctrl+F12**: a Start Menu shortcut (`AirDesk.lnk`) launches
+AirDesk from anywhere. (Plain F12 is grabbed by another app on this
+machine — likely MSI Center / SteelSeries GG / NVIDIA Overlay — so
+Explorer could never register it for the shortcut; Shift+F12 is taken
+too.) A second press while it's running does nothing (single-instance
+guard).
+
 Take your hands out of frame to pause (control resumes the moment they're
 back); quit with Esc in the preview window. `Ctrl+Alt+M` toggles the mic
 (`Ctrl+Alt+Space` pause also exists but another app owns that hotkey on
@@ -36,7 +43,8 @@ Cursor follows your **index fingertip** (right hand by default).
 | Index + middle extended ("scroll pose"), move hand up/down | Scroll (analog) |
 | Ring + thumb pinch, move hand up/down | Volume |
 | Pinky + thumb pinch (tap) | Toggle mic |
-| Open palm, fast horizontal swipe | Alt+Tab |
+| Open palm, fast swipe right / left | Next / previous track (set `swipe.palm_action: alt_tab` for the old Alt+Tab) |
+| Point index finger sideways, hold a beat | Next / previous track — steadier than the swipe (needs `cursor: false`; drop the point and re-aim to repeat) |
 | Open palm (still) | Neutral — reposition your hand without moving the cursor |
 | Hands out of frame | Auto-pause; control resumes when they're back |
 | Fist held 1s | Silence: pause media + mute speakers (fist again to restore) |
@@ -98,6 +106,9 @@ Command highlights (see `airdesk/voice/router.py` for the full grammar):
 
 Everything lives in `config/gestures.yaml`:
 
+- Only want some controls → flip individual toggles under `gestures:`
+  (e.g. music-only: everything `false` except `palm_swipe`, `volume`,
+  `fist_mute`).
 - Cursor feels jittery → raise `cursor.one_euro.min_cutoff` slightly down, or lower `beta`.
 - Cursor lags fast moves → raise `beta`.
 - Pinches trigger too easily / not enough → adjust `pinch.engage` (lower = must pinch tighter).

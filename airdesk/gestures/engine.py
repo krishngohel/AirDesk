@@ -23,6 +23,7 @@ class Engine:
         self.mouse = mouse
         self.kb = kb
         self.notify = notify or (lambda msg: None)
+        self.gestures = cfg.get("gestures") or {}
         pc = cfg["pinch"]
         self.pinch = {
             label: {f: Hysteresis(pc["engage"], pc["release"]) for f in FINGERS}
@@ -54,6 +55,15 @@ class Engine:
         self._fist_armed = True
         self._swipe_cd = 0.0
         self._pinky_prev = False
+        self._palm_miss = 0
+        self.swipe_vx = 0.0     # live palm-swipe velocity, shown in preview
+        self._point_n = 0       # consecutive frames of a sideways point
+        self._point_dir = 0
+        self._point_armed = True
+
+    def _on(self, name):
+        """A gesture is active unless explicitly disabled in config."""
+        return self.gestures.get(name, True)
 
     # ------------------------------------------------------------- update
 
@@ -75,7 +85,8 @@ class Engine:
         primary = by_label.get(pref) or next(iter(by_label.values()))
 
         # fist silence gesture works even while paused
-        self._fist_logic(primary, t)
+        if self._on("fist_mute"):
+            self._fist_logic(primary, t)
         if not self.enabled:
             self.status = "PAUSED"
             return
@@ -83,12 +94,13 @@ class Engine:
         # ---- two-hand gestures take priority ----
         left, right = by_label.get("Left"), by_label.get("Right")
         if left and right:
-            if pin["Left"]["index"] and pin["Right"]["index"]:
+            if pin["Left"]["index"] and pin["Right"]["index"] and self._on("zoom"):
                 self._zoom_step(left, right, t)
                 return
             if self.mode == "ZOOM":
                 self._end_zoom()
-            if left.pose == "palm" and right.pose == "palm":
+            if (left.pose == "palm" and right.pose == "palm"
+                    and self._on("two_palm_swipe")):
                 self._two_palm_swipe(left, right, t)
                 return
             self._two_trail.clear()
@@ -103,7 +115,8 @@ class Engine:
         pose = s.pose
         # cursor follows the index fingertip (frozen while scrolling or
         # adjusting volume — those reuse vertical hand motion)
-        if pose not in ("palm", "fist") and self.mode not in ("SCROLL", "VOLUME"):
+        if (self._on("cursor") and pose not in ("palm", "fist")
+                and self.mode not in ("SCROLL", "VOLUME")):
             x, y = self._map(s.hand.pts[8], t)
             self.mouse.move_to(x, y)
             self._trail.append((t, x, y))
@@ -113,7 +126,8 @@ class Engine:
         hold = self.cfg["pinch"]["window_hold_ms"] / 1000.0
 
         # pinky+thumb tap toggles the mic
-        if pk and not self._pinky_prev and self.mode == "NONE" and not (pi or pm or pr):
+        if (pk and not self._pinky_prev and self.mode == "NONE"
+                and not (pi or pm or pr) and self._on("mic_toggle")):
             self.set_mic(not self.mic_on)
         self._pinky_prev = pk
 
@@ -155,20 +169,24 @@ class Engine:
         self.status = f"{self.mode}  mic:{'on' if self.mic_on else 'off'}"
 
     def _from_idle(self, s, pi, pm, pr, pose, t):
-        if pi and pm:
+        if pose != "point":
+            self._point_n = 0
+            self._point_armed = True
+        if pi and pm and self._on("right_click"):
             self._start_right()
-        elif pi:  # index pinch: tap = click, hold = drag
+        elif pi and self._on("click"):  # index pinch: tap = click, hold = drag
             self._pending = {"kind": "click", "t0": t, "pos": self.mouse.pos}
             self.mode = "PENDING"
-        elif pm:  # middle pinch: tap = double-click, hold = move window
+        elif pm and self._on("window_move"):
+            # middle pinch: tap = double-click, hold = move window
             self._pending = {"kind": "window", "t0": t, "pos": self.mouse.pos}
             self.mode = "PENDING"
-        elif pr:
+        elif pr and self._on("volume"):
             self.mode = "VOLUME"
             self.notify("volume")
             self._vol_prev = float(s.hand.palm[1])
             self._vol_accum = 0.0
-        elif pose == "scroll":
+        elif pose == "scroll" and self._on("scroll"):
             self._scroll_on += 1
             if self._scroll_on >= 3:
                 self.mode = "SCROLL"
@@ -179,10 +197,19 @@ class Engine:
                 self._scroll_on = 0
         else:
             self._scroll_on = 0
-            if pose == "palm":
+            if (pose == "point" and self._on("point_skip")
+                    and not self._on("cursor")):
+                self._point_skip(s, t)
+            elif pose == "palm" and self._on("palm_swipe"):
+                self._palm_miss = 0
                 self._palm_swipe(s, t)
             else:
-                self._palm_trail.clear()
+                # tolerate brief tracking flickers mid-swipe before
+                # giving up on the trail
+                self._palm_miss += 1
+                if self._palm_miss >= 3:
+                    self._palm_trail.clear()
+                    self.swipe_vx = 0.0
 
     def _resolve_pending(self, pi, pm, t, grace, hold):
         p = self._pending
@@ -359,11 +386,58 @@ class Engine:
             return
         (t0, x0), (t1, x1) = self._palm_trail[0], self._palm_trail[-1]
         vx = (x1 - x0) / max(t1 - t0, 1e-3)  # frame-widths per second
-        if abs(vx) >= self.cfg["swipe"]["vx_thresh"]:
-            self.kb.alt_tab()       # fast one-palm horizontal swipe
+        self.swipe_vx = vx
+        if abs(vx) < self.cfg["swipe"]["vx_thresh"]:
+            return
+        # frame is mirrored, so vx > 0 matches the hand moving right on screen
+        if self.cfg["swipe"].get("palm_action", "media") == "media":
+            if vx > 0:
+                self.kb.tap("next_track")
+                self.notify("next track")
+            else:
+                self.kb.tap("prev_track")
+                self.notify("previous track")
+        else:
+            self.kb.alt_tab()
             self.notify("switch window")
-            self._swipe_cd = t + self.cfg["swipe"]["cooldown_s"]
-            self._palm_trail.clear()
+        self._swipe_cd = t + self.cfg["swipe"]["cooldown_s"]
+        self._palm_trail.clear()
+        self.swipe_vx = 0.0
+
+    # -------------------------------------------------- point: skip track
+
+    def _point_skip(self, s, t):
+        """Index finger pointing sideways, held still a beat = next/prev
+        track. Pose-based, so unlike the palm swipe it doesn't depend on
+        the tracker keeping up with fast hand motion."""
+        c = self.cfg.get("point_skip") or {}
+        v = s.hand.ptsi[8] - s.hand.ptsi[5]  # index knuckle -> fingertip
+        dx, dy = float(v[0]), float(v[1])
+        flat = (abs(dx) >= abs(dy) * c.get("min_tilt", 2.0)
+                and abs(dx) >= s.span * c.get("min_reach", 0.5))
+        if not flat:
+            self._point_n = 0
+            self._point_armed = True
+            return
+        d = 1 if dx > 0 else -1
+        if d != self._point_dir:
+            self._point_n = 0
+            self._point_armed = True
+        self._point_dir = d
+        if t < self._swipe_cd:
+            return
+        self._point_n += 1
+        # fires once per distinct point; drop the point and re-aim to repeat
+        if self._point_n < c.get("hold_frames", 4) or not self._point_armed:
+            return
+        self._point_armed = False
+        if d > 0:  # frame is mirrored, so dx > 0 = pointing right on screen
+            self.kb.tap("next_track")
+            self.notify("next track")
+        else:
+            self.kb.tap("prev_track")
+            self.notify("previous track")
+        self._swipe_cd = t + self.cfg["swipe"]["cooldown_s"]
 
     # ------------------------------------------------------- fist pause
 
@@ -417,6 +491,10 @@ class Engine:
         self._trail.clear()
         self._palm_trail.clear()
         self._two_trail.clear()
+        self._palm_miss = 0
+        self.swipe_vx = 0.0
+        self._point_n = 0
+        self._point_armed = True
         self.status = "no hands — paused"
 
     # ---------------------------------------------------------- mapping

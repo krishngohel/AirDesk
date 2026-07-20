@@ -4,6 +4,23 @@ camera:
   height: 480
   fps: 30
 
+# Turn individual controls on/off (missing = on). E.g. for a music-only
+# setup, set everything false except palm_swipe (+ volume / fist_mute).
+gestures:
+  cursor: false          # index-fingertip cursor movement
+  click: false           # index pinch: tap = click, hold = drag
+  right_click: false     # index + middle pinch together
+  window_move: false     # middle pinch: tap = double-click, hold = move window
+  scroll: false          # index+middle extended, move hand up/down
+  volume: true          # ring pinch, move hand up/down
+  mic_toggle: true      # pinky pinch tap
+  fist_mute: true       # fist held = pause media + mute
+  palm_swipe: false      # open palm, fast horizontal swipe (see swipe.palm_action)
+  point_skip: true      # index finger pointing sideways = next/prev track
+                        # (pose-based, steadier than the swipe; needs cursor off)
+  zoom: true            # two-handed pinch spread
+  two_palm_swipe: true  # both palms up/down = task view / show desktop
+
 tracking:
   primary_hand: Right   # hand that drives the cursor
   max_hands: 2
@@ -38,9 +55,18 @@ volume:
   step_norm: 0.035    # hand travel per volume tick
 
 swipe:
-  vx_thresh: 1.2      # frame-widths/sec for one-palm alt-tab swipe
+  palm_action: media  # media = swipe right -> next track, left -> previous;
+                      # alt_tab = old behavior (switch window)
+  vx_thresh: 0.4      # frame-widths/sec for the one-palm horizontal swipe
+                      # (preview shows a live meter — bar past the tick fires)
   vy_thresh: 0.9      # frame-heights/sec for two-palm up/down swipe
   cooldown_s: 1.0
+
+point_skip:
+  hold_frames: 4      # frames the sideways point must be held (~0.13s at 30fps)
+  min_tilt: 2.0       # finger must be this much more horizontal than vertical
+  min_reach: 0.5      # min horizontal finger length vs hand span (rejects
+                      # pointing at the camera); shares swipe.cooldown_s
 
 window:
   fling_px_s: 1800    # release speed that snaps the window to an edge

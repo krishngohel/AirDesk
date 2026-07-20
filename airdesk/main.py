@@ -19,6 +19,13 @@ from .ui.debug_view import draw
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _already_running():
+    """Named mutex so a launch hotkey can't start a second instance
+    (two processes fighting over the webcam)."""
+    ctypes.windll.kernel32.CreateMutexW(None, False, "AirDesk.single_instance")
+    return ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+
+
 def _dpi_aware():
     user32 = ctypes.windll.user32
     try:
@@ -61,6 +68,10 @@ def main():
                     help="process N frames with NO input injection, then report")
     args = ap.parse_args()
 
+    if not args.selftest and _already_running():
+        print("AirDesk is already running.")
+        return
+
     cfg = yaml.safe_load(Path(args.config).read_text())
     _dpi_aware()
 
@@ -95,6 +106,19 @@ def main():
               "Ctrl+Alt+M / pinky pinch = mic, Esc in preview = quit.")
 
     preview = cfg["ui"]["show_preview"] and not args.selftest
+    menu = None
+    if preview:
+        win_name = "AirDesk  (Esc quits)"
+        cv2.namedWindow(win_name)
+        if engine:
+            from .ui.menu import Menu
+            menu = Menu(engine, Path(args.config))
+
+            def _mouse(event, x, y, flags, param):
+                if event == cv2.EVENT_LBUTTONDOWN:
+                    menu.on_click(x, y)
+
+            cv2.setMouseCallback(win_name, _mouse)
     frames = 0
     hands_seen = 0
     fps = 0.0
@@ -121,9 +145,15 @@ def main():
                 break
 
             if preview:
-                cv2.imshow("AirDesk  (Esc quits)", draw(frame, hands, engine, fps))
-                if cv2.waitKey(1) & 0xFF == 27:
+                img = draw(frame, hands, engine, fps)
+                if menu:
+                    img = menu.draw(img)
+                cv2.imshow(win_name, img)
+                key = cv2.waitKey(1) & 0xFF
+                if key == 27:
                     break
+                if key == ord("g") and menu:
+                    menu.toggle_visible()
     finally:
         if voice:
             voice.stop()
